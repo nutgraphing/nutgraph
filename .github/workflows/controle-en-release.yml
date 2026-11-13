@@ -1,0 +1,65 @@
+name: Controle en release
+
+# Bij elke wijziging: controleren of de basisonderdelen er nog zijn.
+# Op de hoofdtak (main) en met een nieuw versienummer: automatisch een release maken
+# met nutgraph.zip. WordPress haalt die release op als update.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  controle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Basisonderdelen controleren
+        run: bash tools/check-basis.sh
+
+  release:
+    needs: controle
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versienummer lezen
+        id: versie
+        run: |
+          v=$(grep -m1 -E "^ \* Version:" nutgraph.php | sed -E 's/.*Version:[[:space:]]*//' | tr -d '[:space:]')
+          echo "versie=$v" >> "$GITHUB_OUTPUT"
+          echo "Versie in de plugin: $v"
+
+      - name: Bestaat deze release al?
+        id: bestaat
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.versie.outputs.versie }}" >/dev/null 2>&1; then
+            echo "ja=1" >> "$GITHUB_OUTPUT"
+            echo "Release v${{ steps.versie.outputs.versie }} bestaat al. Verhoog het versienummer om een nieuwe uit te brengen."
+          else
+            echo "ja=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Zip bouwen
+        if: steps.bestaat.outputs.ja == '0'
+        run: |
+          mkdir -p build/nutgraph
+          cp -r nutgraph.php readme.txt includes assets build/nutgraph/
+          cd build && zip -rq ../nutgraph.zip nutgraph
+          cd .. && unzip -l nutgraph.zip
+
+      - name: Release maken
+        if: steps.bestaat.outputs.ja == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.versie.outputs.versie }}"
+          notes=$(awk -v v="$v" '$0=="= "v" =" {f=1; next} /^= / {f=0} f' readme.txt)
+          [ -z "$notes" ] && notes="Versie $v"
+          gh release create "v$v" nutgraph.zip --title "Nutgraph $v" --notes "$notes"
