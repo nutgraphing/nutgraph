@@ -3,7 +3,7 @@
  * Plugin Name:       Nutgraph
  * Plugin URI:        https://github.com/
  * Description:       Whiteboard met plakbriefjes om verhaalstructuren te bouwen: een ruggengraat van boven naar beneden, details ernaast. Alle gegevens blijven in de browser van de gebruiker. Gebruik de shortcode [nutgraph] of het menu Nutgraph.
- * Version:           1.0.1
+ * Version:           1.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Nutgraph
@@ -20,12 +20,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Moet altijd gelijk zijn aan "Version:" hierboven. De controle in GitHub bewaakt dit.
-define( 'NUTGRAPH_VERSION', '1.0.1' );
+define( 'NUTGRAPH_VERSION', '1.1.0' );
 define( 'NUTGRAPH_FILE', __FILE__ );
 define( 'NUTGRAPH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NUTGRAPH_URL', plugin_dir_url( __FILE__ ) );
 
 require_once NUTGRAPH_DIR . 'includes/class-nutgraph-updater.php';
+require_once NUTGRAPH_DIR . 'includes/class-nutgraph-i18n.php';
 require_once NUTGRAPH_DIR . 'includes/class-nutgraph-settings.php';
 
 Nutgraph_Updater::init();
@@ -48,6 +49,12 @@ function nutgraph_register_assets() {
 		NUTGRAPH_VERSION,
 		true
 	);
+	// De teksten van het bord in alle talen. Het bord kiest zelf de taal van de gebruiker.
+	wp_add_inline_script(
+		'nutgraph',
+		'window.NutgraphI18n = ' . wp_json_encode( Nutgraph_I18n::client_data() ) . ';',
+		'before'
+	);
 }
 add_action( 'wp_enqueue_scripts', 'nutgraph_register_assets' );
 add_action( 'admin_enqueue_scripts', 'nutgraph_register_assets' );
@@ -58,7 +65,7 @@ add_action( 'admin_enqueue_scripts', 'nutgraph_register_assets' );
 function nutgraph_container() {
 	wp_enqueue_style( 'nutgraph' );
 	wp_enqueue_script( 'nutgraph' );
-	return '<div class="vb-root" data-nutgraph="1"><noscript>Nutgraph werkt alleen met JavaScript.</noscript></div>';
+	return '<div class="vb-root" data-nutgraph="1"><noscript>' . esc_html( Nutgraph_I18n::text( 'noscript' ) ) . '</noscript></div>';
 }
 
 // @basis: shortcode — [nutgraph] zet het bord op elke pagina.

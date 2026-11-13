@@ -460,3 +460,83 @@
 	.vb-bar, .vb-substatus, .vb-panel, .vb-cell-add, .vb-rowhead .vb-icon-btn { display: none !important; }
 	.vb-board-wrap { max-height: none; overflow: visible; background: none; }
 }
+
+/* ---------- Taalkeuze en menu Meer ---------- */
+
+.vb-lang { display: inline-flex; }
+.vb-scope .vb-select {
+	margin: 0;
+	padding: .45em 2em .45em .7em;
+	min-height: 0;
+	border: 1px solid var(--vb-line);
+	border-radius: 6px;
+	background: var(--vb-paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2356636F'/%3E%3C/svg%3E") no-repeat right .7em center;
+	color: var(--vb-ink);
+	font: inherit;
+	font-size: 14px;
+	line-height: 1.2;
+	box-shadow: none;
+	cursor: pointer;
+	-webkit-appearance: none;
+	appearance: none;
+}
+.vb-scope .vb-select:hover { border-color: var(--vb-muted); }
+
+.vb-more { position: relative; display: inline-flex; }
+.vb-caret { font-size: 11px; color: var(--vb-muted); }
+.vb-btn-primary .vb-caret { color: inherit; }
+.vb-menu {
+	position: absolute;
+	top: calc(100% + 4px);
+	right: 0;
+	z-index: 50;
+	min-width: 200px;
+	padding: 4px;
+	border: 1px solid var(--vb-line);
+	border-radius: 8px;
+	background: var(--vb-paper);
+	box-shadow: 0 12px 28px -12px rgba(29, 39, 51, .45);
+}
+.vb-menu[hidden] { display: none; }
+.vb-scope .vb-menu-item {
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: .55em .8em;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--vb-ink);
+	font: inherit;
+	font-size: 14px;
+	text-align: left;
+	box-shadow: none;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.vb-scope .vb-menu-item:hover, .vb-scope .vb-menu-item:focus { background: #EEF2F6; outline: none; }
+.vb-scope .vb-menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--vb-marker); }
+
+/* ---------- Afdrukken (A4 liggend) ---------- */
+
+.vb-print-root { display: none; }
+
+@media print {
+	html.vb-printing, html.vb-printing body { margin: 0 !important; padding: 0 !important; background: #fff !important; min-width: 0 !important; height: auto !important; }
+	html.vb-printing body > *:not(.vb-print-root) { display: none !important; }
+	html.vb-printing .vb-print-root { display: block !important; }
+}
+
+.vb-print-root { color: #1D2733; font-size: 9pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.vb-scope .vb-print-title { margin: 0 0 1mm; font-size: 17pt; font-weight: 700; line-height: 1.2; color: #1D2733; }
+.vb-scope .vb-print-meta { margin: 0 0 4mm; color: #56636F; font-size: 8pt; }
+.vb-print-grid { display: grid; gap: 2.5mm; align-items: start; }
+.vb-print-head { padding-bottom: 1mm; border-bottom: .4pt solid #CAD3DB; color: #56636F; font-size: 7.5pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.vb-print-rownum { padding-top: 1.5mm; color: #56636F; font-size: 7pt; font-weight: 700; }
+.vb-print-note { padding: 2mm 2.2mm; border: .4pt solid #B3BDC6; border-radius: 1mm; break-inside: avoid; page-break-inside: avoid; font-family: var(--vb-note-font); }
+.vb-print-note-title { font-size: 9.5pt; font-weight: 700; line-height: 1.22; overflow-wrap: anywhere; }
+.vb-print-note-text { margin-top: 1mm; font-size: 8pt; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vb-scope .vb-print-sources { margin: 1.2mm 0 0; padding: 0 0 0 3mm; color: #56636F; font-size: 6.5pt; font-style: italic; line-height: 1.3; overflow-wrap: anywhere; }
+.vb-print-empty { min-height: 4mm; }
+.vb-print-cols-6 .vb-print-note-title, .vb-print-cols-7 .vb-print-note-title, .vb-print-cols-8 .vb-print-note-title { font-size: 8pt; }
+.vb-print-cols-6 .vb-print-note-text, .vb-print-cols-7 .vb-print-note-text, .vb-print-cols-8 .vb-print-note-text { font-size: 7pt; }
