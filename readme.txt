@@ -1,10 +1,10 @@
 === Nutgraph ===
-Contributors: Pieter Beens
+Contributors: nutgraph
 Tags: schrijven, structuur, whiteboard, plakbriefjes, journalistiek
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 
 Whiteboard met plakbriefjes om verhaalstructuren te bouwen. Alle gegevens blijven in de browser.
@@ -25,3 +25,6 @@ Gebruik: zet [nutgraph] op een pagina, of open het menu Nutgraph in wp-admin.
 
 = 1.0.1 =
 Testupdate
+
+= 1.0.2 =
+* Contributors in readme teruggezet naar "nutgraph".
