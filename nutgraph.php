@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Moet altijd gelijk zijn aan "Version:" hierboven. De controle in GitHub bewaakt dit.
-define( 'NUTGRAPH_VERSION', '1.0.0' );
+define( 'NUTGRAPH_VERSION', '1.0.1' );
 define( 'NUTGRAPH_FILE', __FILE__ );
 define( 'NUTGRAPH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NUTGRAPH_URL', plugin_dir_url( __FILE__ ) );
