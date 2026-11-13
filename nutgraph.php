@@ -3,7 +3,7 @@
  * Plugin Name:       Nutgraph
  * Plugin URI:        https://github.com/
  * Description:       Whiteboard met plakbriefjes om verhaalstructuren te bouwen: een ruggengraat van boven naar beneden, details ernaast. Alle gegevens blijven in de browser van de gebruiker. Gebruik de shortcode [nutgraph] of het menu Nutgraph.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Nutgraph
