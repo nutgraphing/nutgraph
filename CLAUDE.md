@@ -17,7 +17,7 @@ controleert ze; ontbreekt er één, dan komt er geen release.
 | shortcode      | `[nutgraph]` zet het bord op een pagina |
 | adminmenu      | Menu "Nutgraph" in wp-admin |
 | updater        | Updates via GitHub-releases (`Update URI` + filter `update_plugins_github.com`) |
-| instellingen   | Instellingen → Nutgraph, met het veld voor de GitHub-repository |
+| instellingen   | Eigen menu-item "Nutgraph-instellingen" in het hoofdmenu (met logo), met het veld voor de GitHub-repository en het talenbeheer |
 | opslag         | Bibliotheek in localStorage (`verhaalbord.v1.library`, oude naam: niet wijzigen) |
 | bronnen        | Links en documenten per briefje; documenten in IndexedDB |
 | bibliotheek    | Meerdere verhalen: openen, nieuw, hernoemen, dupliceren, verwijderen |
@@ -43,7 +43,10 @@ Je mag deze onderdelen verbeteren, maar niet weghalen of hun markering verwijder
 4. **Geen externe bronnen laden** (geen CDN's, geen Google Fonts, geen trackers).
    Alles zit in de plugin zelf.
 5. **Geen `fetch`, `XMLHttpRequest` of `sendBeacon`** in de JavaScript van het bord.
-6. **Alle tekst in de interface is Nederlands**, in gewone taal.
+6. **Het bord is tweetalig (Nederlands en Engels)**, in gewone taal. Alle teksten van het bord
+   staan in `includes/class-nutgraph-i18n.php`; voeg een nieuwe tekst altijd in BEIDE talen toe
+   en gebruik in de JavaScript `t('sleutel')`, nooit een vaste tekst. Beheerders kunnen extra
+   talen toevoegen (optie `nutgraph_languages`, alleen vertalingen). De beheerpagina's zijn Nederlands.
 7. **Draai `bash tools/check-basis.sh`** voordat je commit. Moet eindigen met
    "Alle basisonderdelen aanwezig."
 8. Werk in een aparte branch en open een pull request, tenzij de eigenaar zegt
@@ -53,7 +56,9 @@ Je mag deze onderdelen verbeteren, maar niet weghalen of hun markering verwijder
 ## Bestanden
 - `nutgraph.php` — hoofdbestand, shortcode, menu
 - `includes/class-nutgraph-updater.php` — haalt releases van GitHub
-- `includes/class-nutgraph-settings.php` — instellingenpagina
+- `includes/class-nutgraph-settings.php` — instellingenpagina (eigen menu-item) en talenbeheer
+- `includes/class-nutgraph-i18n.php` — alle teksten van het bord in het Nederlands en Engels
+- `assets/nutgraph-logo.png` — logo, ook het pictogram van het menu Nutgraph-instellingen
 - `assets/nutgraph.js` — het hele bord (geen build-stap, gewone JavaScript)
 - `assets/nutgraph.css` — opmaak, alles onder `.vb-scope`
 - `tools/check-basis.sh` — controle van de basisonderdelen
