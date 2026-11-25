@@ -4,7 +4,7 @@ Tags: schrijven, structuur, whiteboard, plakbriefjes, journalistiek
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 
 Whiteboard met plakbriefjes om verhaalstructuren te bouwen. Alle gegevens blijven in de browser.
@@ -50,3 +50,7 @@ Testupdate
 * Bestandsnamen op een eigen regel worden herkend en krijgen een pictogram van het bestandstype. Uploaden kan op de crazywall niet.
 * Op het storyboard hang je met de rechtermuisknop (of via het bewerkpaneel) een crazywall-briefje als onderliggend briefje onder een plakbriefje.
 * De crazywall en de onderliggende briefjes gaan mee in export, import, deellink, tekstoverzicht, afdrukken en PDF. Oude borden en exportbestanden blijven gewoon werken.
+
+= 1.3.0 =
+* Briefjes op de crazywall krijgen een soort met eigen pictogram: persoon, organisatie, plek, gebeurtenis, situatie, tijdstip, voorwerp, spoor of bewijsstuk, foto, document, geld, voertuig, telefoon, bericht of sociale media, citaat, bron, nieuwsartikel, rechtszaak, open vraag, idee of iets anders.
+* Het pictogram verschijnt ook bij onderliggende briefjes op het storyboard en in het keuzemenu; daar kun je ook op soort zoeken.

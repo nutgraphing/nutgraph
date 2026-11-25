@@ -34,6 +34,8 @@
 		{ hex: '#2E7D32', name: 'color_green' },
 		{ hex: '#EF6C00', name: 'color_orange' }
 	];
+	// Toegestane soorten wandbriefjes (zie KINDS bij de crazywall voor de pictogrammen).
+	var WALL_KINDS = ['person', 'organization', 'place', 'event', 'situation', 'time', 'object', 'evidence', 'photo', 'document', 'money', 'vehicle', 'phone', 'message', 'quote', 'source', 'article', 'legal', 'question', 'idea', 'other'];
 	var SPINE_COLOR = '#FFE873';
 	var DETAIL_COLOR = '#AED9F5';
 
@@ -330,6 +332,7 @@
 				id: id,
 				x: coord(it.x),
 				y: coord(it.y),
+				kind: typeof it.kind === 'string' && WALL_KINDS.indexOf(it.kind) >= 0 ? it.kind : '', // nieuw in 1.3
 				title: String(it.title || '').slice(0, 300),
 				text: String(it.text || '').slice(0, 20000),
 				color: /^#[0-9a-f]{6}$/i.test(it.color) ? it.color : COLORS[0].hex
@@ -449,7 +452,11 @@
 			})
 		};
 		if (wall.items.length) {
-			d.w = wall.items.map(function (it) { return [Math.round(it.x), Math.round(it.y), it.color, it.title, it.text]; });
+			d.w = wall.items.map(function (it) {
+				var a = [Math.round(it.x), Math.round(it.y), it.color, it.title, it.text];
+				if (it.kind) a.push(it.kind);
+				return a;
+			});
 			d.l = wall.lines.map(function (l) { return [index[l.from], index[l.to], l.color]; });
 		}
 		return d;
@@ -459,7 +466,7 @@
 		return normalizeProject({
 			name: d.n,
 			wall: {
-				items: (d.w || []).map(function (a, i) { return { id: ids[i], x: a[0], y: a[1], color: a[2], title: a[3], text: a[4] }; }),
+				items: (d.w || []).map(function (a, i) { return { id: ids[i], x: a[0], y: a[1], color: a[2], title: a[3], text: a[4], kind: a[5] }; }),
 				lines: (d.l || []).map(function (a) { return { from: ids[a[0]], to: ids[a[1]], color: a[2] }; })
 			},
 			notes: (d.t || []).map(function (a) {
@@ -522,7 +529,7 @@
 			lines.push('## ' + t('tab_wall'), '');
 			wall.items.forEach(function (it) {
 				names[it.id] = it.title || t('untitled');
-				lines.push('- **' + names[it.id] + '**' + (it.text ? ': ' + it.text.replace(/\n+/g, ' / ') : ''));
+				lines.push('- ' + (it.kind ? '(' + kindLabel(it.kind) + ') ' : '') + '**' + names[it.id] + '**' + (it.text ? ': ' + it.text.replace(/\n+/g, ' / ') : ''));
 			});
 			if (wall.lines.length) {
 				lines.push('', '### ' + t('wires'), '');
@@ -541,7 +548,7 @@
 	}
 	function kidLines(project, n) {
 		return kidsOf(project, n).map(function (k) {
-			return '- \u21b3 ' + (k.title || t('untitled')) + (k.text ? ': ' + k.text.replace(/\n+/g, ' / ') : '');
+			return '- \u21b3 ' + (k.kind ? '(' + kindLabel(k.kind) + ') ' : '') + (k.title || t('untitled')) + (k.text ? ': ' + k.text.replace(/\n+/g, ' / ') : '');
 		});
 	}
 	function sourceLines(n) {
@@ -949,7 +956,8 @@
 			note.text ? h('span', { class: 'vb-note-text' }, note.text) : null,
 			kids.length || srcCount ? h('span', { class: 'vb-note-foot' },
 				kids.slice(0, 2).map(function (k) {
-					return h('span', { class: 'vb-kid', style: 'background:' + k.color, title: k.title || t('untitled') }, '\u21b3 ' + (k.title || t('untitled')));
+					return h('span', { class: 'vb-kid', style: 'background:' + k.color, title: (k.kind ? kindLabel(k.kind) + ': ' : '') + (k.title || t('untitled')) },
+						k.kind ? kindIcon(k.kind, 'vb-kind-mini') : '\u21b3 ', k.title || t('untitled'));
 				}),
 				kids.length > 2 ? h('span', { class: 'vb-kid vb-kid-more' }, '+' + (kids.length - 2)) : null,
 				srcCount ? h('span', { class: 'vb-note-badge' }, plural(srcCount, 'sources_one', 'sources_many')) : null
@@ -1338,6 +1346,39 @@
 	var EXT_TYPE = {};
 	Object.keys(FILE_TYPES).forEach(function (type) { FILE_TYPES[type].forEach(function (ext) { EXT_TYPE[ext] = type; }); });
 
+	// Soorten briefjes op de crazywall, met een eigen getekend pictogram (24×24, lijnen).
+	// Volgorde = volgorde in de keuzelijst. Nieuwe soort? Ook 'kind_<naam>' toevoegen in de vertalingen.
+	var KINDS = {
+		person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
+		organization: '<path d="M4 21V5l8-3v19M12 9h8v12M3 21h18M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2"/>',
+		place: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+		event: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h3v3H8z"/>',
+		situation: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>',
+		time: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+		object: '<path d="M3 7.5l9-4.5 9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5l9 4.5 9-4.5M12 12v9"/>',
+		evidence: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>',
+		photo: '<path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13.5" r="3.5"/>',
+		document: '<path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5M9 12h7M9 16h7"/>',
+		money: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5a4.5 4.5 0 1 0 0 7M7.5 11h6M7.5 13.5h6"/>',
+		vehicle: '<path d="M5 17H3v-5l2.5-5h13l2.5 5v5h-2M3 12h18M9.5 17h5"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/>',
+		phone: '<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
+		message: '<path d="M4 4h16v12H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
+		quote: '<path d="M4 18c3 0 5-2 5-6V6H4v6h4M14 18c3 0 5-2 5-6V6h-5v6h4"/>',
+		source: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+		article: '<path d="M4 4h13v15a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2z"/><path d="M17 8h3v11a2 2 0 0 1-2 2M7 8h7M7 12h7M7 16h4"/>',
+		legal: '<path d="M12 3v18M7 21h10M5 7h14M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0z"/>',
+		question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7v.5M12 17h.01"/>',
+		idea: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+		other: '<path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="7.5" cy="7.5" r="1.5"/>'
+	};
+	function kindIcon(kind, extraClass) {
+		var span = h('span', { class: 'vb-kind-icon' + (extraClass ? ' ' + extraClass : ''), 'aria-hidden': 'true' });
+		// Vaste, eigen SVG-tekst uit KINDS hierboven; nooit invoer van gebruikers.
+		if (KINDS[kind]) span.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + KINDS[kind] + '</svg>';
+		return span;
+	}
+	function kindLabel(kind) { return KINDS[kind] ? t('kind_' + kind) : ''; }
+
 	// Een regel die alleen uit een bestandsnaam (of pad) bestaat, bijvoorbeeld "notulen raad 12-3.pdf".
 	function fileOfLine(line) {
 		var name = String(line || '').trim();
@@ -1616,9 +1657,10 @@
 			class: 'vb-wall-item' + (it.id === this.selectedWallId ? ' is-selected' : ''),
 			style: 'left:' + it.x + 'px;top:' + it.y + 'px;width:' + WALL_W + 'px;background:' + it.color + ';--vb-tilt:' + tilt(it.id) + 'deg',
 			tabindex: '0', role: 'button', 'data-id': it.id,
-			'aria-label': t('wall_item_label', { title: it.title || t('untitled') })
+			'aria-label': (it.kind ? kindLabel(it.kind) + ': ' : '') + t('wall_item_label', { title: it.title || t('untitled') })
 		},
 			pin,
+			it.kind ? h('span', { class: 'vb-kind' }, kindIcon(it.kind), h('span', { class: 'vb-kind-label' }, kindLabel(it.kind))) : null,
 			h('span', { class: 'vb-wall-title' + (it.title ? '' : ' is-empty') }, it.title || t('untitled')),
 			it.text ? h('div', { class: 'vb-wall-text' }, richText(it.text)) : null,
 			used ? h('span', { class: 'vb-note-badge vb-wall-used' }, used === 1 ? t('used_one') : t('used_many', { n: used })) : null
@@ -1814,7 +1856,7 @@
 			var busy = function () { return items.some(function (it) { return Math.abs(it.x - x) < 20 && Math.abs(it.y - y) < 20; }); };
 			while (busy()) { x += 24; y += 24; }
 		}
-		var it = { id: uid(), x: Math.round(x), y: Math.round(y), title: '', text: '', color: COLORS[0].hex };
+		var it = { id: uid(), x: Math.round(x), y: Math.round(y), kind: '', title: '', text: '', color: COLORS[0].hex };
 		items.push(it);
 		this.persist();
 		this.drawWall();
@@ -1860,6 +1902,26 @@
 		textArea.value = it.text;
 		textArea.addEventListener('input', function () { it.text = textArea.value; self.drawWallFiles(it); self.changedWall(it); });
 		var colors = swatchPicker(function () { return it.color; }, function (hex) { it.color = hex; self.persist(); self.replaceWallItem(it); });
+		var kinds = h('div', { class: 'vb-kinds', role: 'radiogroup', 'aria-label': t('kind'), 'aria-describedby': 'vb-khint-' + id });
+		function drawKinds() {
+			kinds.innerHTML = '';
+			[''].concat(Object.keys(KINDS)).forEach(function (k) {
+				var active = (it.kind || '') === k;
+				kinds.appendChild(h('button', {
+					type: 'button', role: 'radio', class: 'vb-kind-btn' + (active ? ' is-active' : ''), 'aria-checked': active ? 'true' : 'false',
+					tabindex: active ? '0' : '-1',
+					onclick: function () { it.kind = k; self.persist(); self.replaceWallItem(it); drawKinds(); kinds.querySelector('.is-active').focus(); },
+					onkeydown: function (e) {
+						var btns = Array.prototype.slice.call(kinds.children), i = btns.indexOf(e.currentTarget);
+						var d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+						if (!d) return;
+						e.preventDefault();
+						btns[(i + d + btns.length) % btns.length].click();
+					}
+				}, k ? kindIcon(k) : h('span', { class: 'vb-kind-icon vb-kind-none', 'aria-hidden': 'true' }, '\u2013'), h('span', null, k ? kindLabel(k) : t('kind_none'))));
+			});
+		}
+		drawKinds();
 
 		this.wallFiles = h('ul', { class: 'vb-wall-files' });
 		this.wallLinks = h('div', { class: 'vb-wall-links' });
@@ -1880,6 +1942,9 @@
 		));
 		this.panel.appendChild(h('div', { class: 'vb-panel-body' },
 			h('label', { class: 'vb-label', for: 'vb-wtitle-' + id }, t('title')), titleInput,
+			h('span', { class: 'vb-label' }, t('kind')),
+			h('p', { class: 'vb-note-hint vb-hint-top', id: 'vb-khint-' + id }, t('kind_hint')),
+			kinds,
 			h('span', { class: 'vb-label' }, t('color')), colors,
 			h('label', { class: 'vb-label', for: 'vb-wtext-' + id }, t('description')), textArea,
 			h('p', { class: 'vb-note-hint vb-hint-under', id: 'vb-whint-' + id }, t('wall_text_hint')),
@@ -1997,7 +2062,7 @@
 		function fill() {
 			list.innerHTML = '';
 			var q = search ? search.value.trim().toLowerCase() : '';
-			var shown = items.filter(function (it) { return !q || (it.title + ' ' + it.text).toLowerCase().indexOf(q) >= 0; });
+			var shown = items.filter(function (it) { return !q || (it.title + ' ' + it.text + ' ' + kindLabel(it.kind)).toLowerCase().indexOf(q) >= 0; });
 			if (!shown.length) list.appendChild(h('p', { class: 'vb-picker-none' }, t('picker_none')));
 			shown.forEach(function (it) {
 				var on = note.refs.indexOf(it.id) >= 0;
@@ -2005,8 +2070,8 @@
 					type: 'button', class: 'vb-picker-item' + (on ? ' is-on' : ''), role: 'menuitemcheckbox', 'aria-checked': on ? 'true' : 'false',
 					onclick: function () { close(true); self.toggleRef(note, it.id); }
 				},
-					h('span', { class: 'vb-picker-dot', style: 'background:' + it.color, 'aria-hidden': 'true' }),
-					h('span', { class: 'vb-picker-name' }, it.title || t('untitled')),
+					h('span', { class: 'vb-picker-dot', style: 'background:' + it.color, 'aria-hidden': 'true' }, it.kind ? kindIcon(it.kind) : null),
+					h('span', { class: 'vb-picker-name' }, it.title || t('untitled'), it.kind ? h('span', { class: 'vb-picker-kind' }, kindLabel(it.kind)) : null),
 					h('span', { class: 'vb-picker-files' }, filesIn(it.text).slice(0, 3).map(fileIcon)),
 					h('span', { class: 'vb-picker-check', 'aria-hidden': 'true' }, on ? '✓' : '')
 				));
@@ -2067,8 +2132,8 @@
 		if (!kids.length) { list.appendChild(h('li', { class: 'vb-source-empty' }, t('kids_none'))); return; }
 		kids.forEach(function (k) {
 			list.appendChild(h('li', { class: 'vb-source vb-kid-row' },
-				h('span', { class: 'vb-picker-dot', style: 'background:' + k.color, 'aria-hidden': 'true' }),
-				h('span', { class: 'vb-kid-title' }, k.title || t('untitled'), filesIn(k.text).slice(0, 3).map(fileIcon)),
+				h('span', { class: 'vb-picker-dot', style: 'background:' + k.color, 'aria-hidden': 'true' }, k.kind ? kindIcon(k.kind) : null),
+				h('span', { class: 'vb-kid-title' }, k.title || t('untitled'), k.kind ? h('span', { class: 'vb-visually-hidden' }, ' (' + kindLabel(k.kind) + ')') : null, filesIn(k.text).slice(0, 3).map(fileIcon)),
 				h('button', { type: 'button', class: 'vb-btn vb-btn-small', onclick: function () { self.showOnWall(k.id); } }, t('show_on_wall')),
 				h('button', { type: 'button', class: 'vb-icon-btn', title: t('kid_remove'), 'aria-label': t('kid_remove') + ': ' + (k.title || t('untitled')), onclick: function () { self.toggleRef(note, k.id); } }, '×')
 			));
@@ -2191,7 +2256,7 @@
 					h('div', { class: 'vb-print-note-title' }, n.title || t('untitled')),
 					n.text ? h('div', { class: 'vb-print-note-text' }, n.text) : null,
 					kidsOf(p, n).length ? h('ul', { class: 'vb-print-kids' }, kidsOf(p, n).map(function (k) {
-						return h('li', { style: 'border-left-color:' + k.color }, '\u21b3 ' + (k.title || t('untitled')));
+						return h('li', { style: 'border-left-color:' + k.color }, '\u21b3 ' + (k.kind ? kindLabel(k.kind) + ': ' : '') + (k.title || t('untitled')));
 					})) : null,
 					n.sources.length ? h('ul', { class: 'vb-print-sources' }, n.sources.map(function (s) { return h('li', null, sourceLabel(s)); })) : null
 				) : h('div', { class: 'vb-print-empty' + (col === 0 ? ' is-spine' : '') }));
@@ -2430,7 +2495,7 @@
 				var textLines = n.text ? wrap(n.text, fsText, false, inner) : [];
 				var kidLinesPdf = [];
 				kidsOf(project, n).forEach(function (k) {
-					wrap('\u00bb ' + (k.title || t('untitled')), fsSrc + 0.5, true, inner).forEach(function (l) { kidLinesPdf.push(l); });
+					wrap('\u00bb ' + (k.kind ? kindLabel(k.kind) + ': ' : '') + (k.title || t('untitled')), fsSrc + 0.5, true, inner).forEach(function (l) { kidLinesPdf.push(l); });
 				});
 				var srcLines = [];
 				n.sources.forEach(function (s) {

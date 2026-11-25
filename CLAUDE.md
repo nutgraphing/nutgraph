@@ -11,7 +11,9 @@ Naast het storyboard is er een tabblad **Crazywall**: losse briefjes op een onbe
 (`project.wall.items`) met draden ertussen (`project.wall.lines`). Een plakbriefje op het
 storyboard kan crazywall-briefjes als onderliggende briefjes hebben (`note.refs`, een lijst
 met id's van wandbriefjes). Op de crazywall kun je niets uploaden; een regel met alleen een
-bestandsnaam krijgt een pictogram van het bestandstype.
+bestandsnaam krijgt een pictogram van het bestandstype. Elk wandbriefje kan een soort hebben
+(`item.kind`, bijvoorbeeld `person` of `place`); de lijst staat in `WALL_KINDS` en de getekende
+pictogrammen in `KINDS` in `assets/nutgraph.js`.
 
 ## Basisonderdelen: deze mogen NOOIT verdwijnen
 Elk onderdeel heeft een markering `@basis:<naam>` in de code. `tools/check-basis.sh`
