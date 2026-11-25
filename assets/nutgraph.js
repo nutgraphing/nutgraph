@@ -11,6 +11,7 @@
 	// Interne opslagnamen bewust ongewijzigd (oude naam), zodat bestaande borden blijven werken.
 	var STORE_KEY = 'verhaalbord.v1.library';
 	var CURRENT_KEY = 'verhaalbord.v1.current';
+	var TAB_KEY = 'verhaalbord.v1.tab';
 	var FORMAT = 'nutgraph';
 	var FORMAT_LIBRARY = 'nutgraph-bibliotheek';
 	var OLD_FORMATS = ['verhaalbord', 'verhaalbord-bibliotheek'];
@@ -24,6 +25,14 @@
 		{ hex: '#FFC98F', name: 'color_orange' },
 		{ hex: '#D7C6F6', name: 'color_lilac' },
 		{ hex: '#FFFFFF', name: 'color_white' }
+	];
+	// Kleuren voor de draden op de crazywall.
+	var LINE_COLORS = [
+		{ hex: '#C62828', name: 'color_red' },
+		{ hex: '#1D2733', name: 'color_black' },
+		{ hex: '#1F4FBF', name: 'color_blue' },
+		{ hex: '#2E7D32', name: 'color_green' },
+		{ hex: '#EF6C00', name: 'color_orange' }
 	];
 	var SPINE_COLOR = '#FFE873';
 	var DETAIL_COLOR = '#AED9F5';
@@ -164,7 +173,7 @@
 			try {
 				var raw = localStorage.getItem(STORE_KEY);
 				var lib = raw ? JSON.parse(raw) : null;
-				if (lib && Array.isArray(lib.projects)) return lib;
+				if (lib && Array.isArray(lib.projects)) { lib.projects.forEach(upgradeProject); return lib; }
 			} catch (e) { /* kapotte opslag: begin leeg */ }
 			return { projects: [] };
 		},
@@ -240,11 +249,25 @@
 
 	function newProject(name) {
 		var now = Date.now();
-		return { id: uid(), name: name || t('new_story'), created: now, updated: now, notes: [] };
+		return { id: uid(), name: name || t('new_story'), created: now, updated: now, notes: [], wall: emptyWall() };
 	}
 
 	function newNote(row, col) {
-		return { id: uid(), row: row, col: col, title: '', text: '', color: col === 0 ? SPINE_COLOR : DETAIL_COLOR, sources: [] };
+		return { id: uid(), row: row, col: col, title: '', text: '', color: col === 0 ? SPINE_COLOR : DETAIL_COLOR, sources: [], refs: [] };
+	}
+
+	function emptyWall() {
+		return { items: [], lines: [], view: { x: 40, y: 40, z: 1 } };
+	}
+
+	// Borden van vóór versie 1.2 hebben nog geen crazywall en geen onderliggende briefjes.
+	// Deze kleine aanvulling verandert verder niets aan bestaande gegevens.
+	function upgradeProject(p) {
+		if (!p || typeof p !== 'object') return p;
+		if (!p.wall || !Array.isArray(p.wall.items) || !Array.isArray(p.wall.lines)) p.wall = emptyWall();
+		if (!p.wall.view) p.wall.view = { x: 40, y: 40, z: 1 };
+		(p.notes || []).forEach(function (n) { if (!Array.isArray(n.refs)) n.refs = []; });
+		return p;
 	}
 
 	// Maakt geïmporteerde of gedeelde gegevens veilig en volledig.
@@ -254,8 +277,11 @@
 			name: String(p.name || t('imported_story')).slice(0, 200),
 			created: Number(p.created) || Date.now(),
 			updated: Number(p.updated) || Date.now(),
-			notes: []
+			notes: [],
+			wall: normalizeWall(p.wall)
 		};
+		var wallIds = {};
+		out.wall.items.forEach(function (it) { wallIds[it.id] = true; });
 		var taken = {};
 		(Array.isArray(p.notes) ? p.notes : []).forEach(function (n) {
 			var row = Math.max(0, Math.min(500, parseInt(n.row, 10) || 0));
@@ -269,6 +295,10 @@
 				title: String(n.title || '').slice(0, 300),
 				text: String(n.text || '').slice(0, 20000),
 				color: /^#[0-9a-f]{6}$/i.test(n.color) ? n.color : (col === 0 ? SPINE_COLOR : DETAIL_COLOR),
+				// Onderliggende briefjes: verwijzingen naar briefjes op de crazywall (nieuw in 1.2).
+				refs: (Array.isArray(n.refs) ? n.refs : []).filter(function (id, i, all) {
+					return typeof id === 'string' && wallIds[id] && all.indexOf(id) === i;
+				}),
 				sources: (Array.isArray(n.sources) ? n.sources : []).map(function (s) {
 					var type = s.type === 'file' || s.type === 'missing' ? s.type : 'link';
 					return {
@@ -283,6 +313,40 @@
 				}).filter(function (s) { return s.type !== 'link' || s.url; })
 			});
 		});
+		return out;
+	}
+
+	// Crazywall van een geïmporteerd of gedeeld verhaal veilig maken. Ontbreekt hij (oude bestanden), dan een lege wand.
+	function normalizeWall(w) {
+		var out = emptyWall();
+		if (!w || typeof w !== 'object') return out;
+		function coord(v) { v = Number(v); return isFinite(v) ? Math.max(-1000000, Math.min(1000000, Math.round(v))) : 0; }
+		var ids = {};
+		(Array.isArray(w.items) ? w.items : []).slice(0, 2000).forEach(function (it) {
+			if (!it || typeof it !== 'object') return;
+			var id = typeof it.id === 'string' && it.id && !ids[it.id] ? it.id : uid();
+			ids[id] = true;
+			out.items.push({
+				id: id,
+				x: coord(it.x),
+				y: coord(it.y),
+				title: String(it.title || '').slice(0, 300),
+				text: String(it.text || '').slice(0, 20000),
+				color: /^#[0-9a-f]{6}$/i.test(it.color) ? it.color : COLORS[0].hex
+			});
+		});
+		var pairs = {};
+		(Array.isArray(w.lines) ? w.lines : []).forEach(function (l) {
+			if (!l || !ids[l.from] || !ids[l.to] || l.from === l.to) return;
+			var key = [l.from, l.to].sort().join('|');
+			if (pairs[key]) return;
+			pairs[key] = true;
+			out.lines.push({ id: typeof l.id === 'string' && l.id ? l.id : uid(), from: l.from, to: l.to, color: /^#[0-9a-f]{6}$/i.test(l.color) ? l.color : LINE_COLORS[0].hex });
+		});
+		if (w.view && typeof w.view === 'object') {
+			var z = Number(w.view.z);
+			out.view = { x: coord(w.view.x), y: coord(w.view.y), z: isFinite(z) && z > 0 ? Math.max(0.2, Math.min(2.5, z)) : 1 };
+		}
 		return out;
 	}
 
@@ -368,25 +432,43 @@
 	}
 
 	// Compacte vorm: geen documenten (te groot), wel links en tekst.
+	// Crazywall (w = briefjes, l = draden) en onderliggende briefjes (7e veld) gaan mee als volgnummers.
 	function packForShare(project) {
-		return {
+		var wall = project.wall || emptyWall();
+		var index = {};
+		wall.items.forEach(function (it, i) { index[it.id] = i; });
+		var d = {
 			n: project.name,
 			t: project.notes.map(function (n) {
-				return [n.row, n.col, n.color, n.title, n.text, n.sources.map(function (s) {
+				var a = [n.row, n.col, n.color, n.title, n.text, n.sources.map(function (s) {
 					return s.type === 'link' ? [s.label, s.url] : [s.label || t('document'), ''];
 				})];
+				var refs = (n.refs || []).filter(function (id) { return index[id] !== undefined; }).map(function (id) { return index[id]; });
+				if (refs.length) a.push(refs);
+				return a;
 			})
 		};
+		if (wall.items.length) {
+			d.w = wall.items.map(function (it) { return [Math.round(it.x), Math.round(it.y), it.color, it.title, it.text]; });
+			d.l = wall.lines.map(function (l) { return [index[l.from], index[l.to], l.color]; });
+		}
+		return d;
 	}
 	function unpackShare(d) {
+		var ids = (d.w || []).map(function () { return uid(); });
 		return normalizeProject({
 			name: d.n,
+			wall: {
+				items: (d.w || []).map(function (a, i) { return { id: ids[i], x: a[0], y: a[1], color: a[2], title: a[3], text: a[4] }; }),
+				lines: (d.l || []).map(function (a) { return { from: ids[a[0]], to: ids[a[1]], color: a[2] }; })
+			},
 			notes: (d.t || []).map(function (a) {
 				return {
 					row: a[0], col: a[1], color: a[2], title: a[3], text: a[4],
 					sources: (a[5] || []).map(function (s) {
 						return s[1] ? { type: 'link', label: s[0], url: s[1] } : { type: 'missing', label: s[0] };
-					})
+					}),
+					refs: (a[6] || []).map(function (i) { return ids[i]; })
 				};
 			})
 		});
@@ -423,16 +505,44 @@
 			lines.push('## ' + (spine ? (spine.title || t('untitled')) : t('row_n', { n: r + 1 })));
 			if (spine) {
 				if (spine.text) lines.push('', spine.text);
-				if (spine.sources.length) lines.push('');
+				if (spine.sources.length || kidLines(project, spine).length) lines.push('');
 				sourceLines(spine).forEach(function (l) { lines.push(l); });
+				kidLines(project, spine).forEach(function (l) { lines.push(l); });
 			}
 			notes.forEach(function (n) {
 				lines.push('', '- **' + (n.title || t('detail')) + '**' + (n.text ? ': ' + n.text.replace(/\n+/g, ' ') : ''));
 				sourceLines(n).forEach(function (l) { lines.push('  ' + l); });
+				kidLines(project, n).forEach(function (l) { lines.push('  ' + l); });
 			});
 			lines.push('');
 		});
+		var wall = project.wall || emptyWall();
+		if (wall.items.length) {
+			var names = {};
+			lines.push('## ' + t('tab_wall'), '');
+			wall.items.forEach(function (it) {
+				names[it.id] = it.title || t('untitled');
+				lines.push('- **' + names[it.id] + '**' + (it.text ? ': ' + it.text.replace(/\n+/g, ' / ') : ''));
+			});
+			if (wall.lines.length) {
+				lines.push('', '### ' + t('wires'), '');
+				wall.lines.forEach(function (l) { lines.push('- ' + names[l.from] + ' \u2014 ' + names[l.to]); });
+			}
+			lines.push('');
+		}
 		return lines.join('\n');
+	}
+	function kidsOf(project, n) {
+		var items = (project.wall || emptyWall()).items;
+		return (n.refs || []).map(function (id) {
+			for (var i = 0; i < items.length; i++) if (items[i].id === id) return items[i];
+			return null;
+		}).filter(Boolean);
+	}
+	function kidLines(project, n) {
+		return kidsOf(project, n).map(function (k) {
+			return '- \u21b3 ' + (k.title || t('untitled')) + (k.text ? ': ' + k.text.replace(/\n+/g, ' / ') : '');
+		});
 	}
 	function sourceLines(n) {
 		return n.sources.map(function (s) {
@@ -498,7 +608,13 @@
 		this.view = 'board';
 		this.project = null;
 		this.selectedId = null;
+		this.selectedWallId = null;
+		this.selectedLineId = null;
+		this.panelMode = null;
 		this.textTimer = null;
+		this.wallZ = 10;
+		this.tab = 'board';
+		try { if (localStorage.getItem(TAB_KEY) === 'wall') this.tab = 'wall'; } catch (e) { /* niet erg */ }
 
 		root.classList.add('vb-scope');
 		root.innerHTML = '';
@@ -741,7 +857,7 @@
 				nameInput
 			),
 			h('div', { class: 'vb-bar-group' },
-				h('button', { type: 'button', class: 'vb-btn vb-btn-primary vb-btn-add', onclick: function () { self.addNote(); } }, t('add_note_btn')),
+				h('button', { type: 'button', class: 'vb-btn vb-btn-primary vb-btn-add', onclick: function () { if (self.tab === 'wall') self.addWallItem(); else self.addNote(); } }, t('add_note_btn')),
 				h('button', { type: 'button', class: 'vb-btn', onclick: function () { self.share(); } }, t('share_link')),
 				h('button', { type: 'button', class: 'vb-btn', onclick: function () { exportProject(p); } }, t('export')),
 				h('button', { type: 'button', class: 'vb-btn', onclick: function () { self.pickImport(); } }, t('import')),
@@ -752,15 +868,21 @@
 				this.languageSelect()
 			)
 		));
+		this.top.appendChild(this.tabs());
 		this.top.appendChild(h('div', { class: 'vb-substatus' }, this.status,
-			h('span', { class: 'vb-help' }, t('help'))));
+			h('span', { class: 'vb-help' }, t(this.tab === 'wall' ? 'wall_help' : 'help'))));
 
+		this.grid = null;
+		this.wallEl = this.wallItems = this.wallSvg = this.wallLayer = this.wireBar = null;
+		this.selectedLineId = null;
+		if (this.tab === 'wall') { this.renderWall(); return; }
 		this.boardWrap = h('div', { class: 'vb-board-wrap' });
 		this.main.appendChild(this.boardWrap);
 		this.drawGrid();
 	};
 
 	App.prototype.drawGrid = function () {
+		if (this.tab !== 'board' || !this.boardWrap) return;
 		var self = this;
 		var notes = this.project.notes;
 		var maxRow = -1, maxCol = 0;
@@ -811,19 +933,36 @@
 	App.prototype.noteElement = function (note) {
 		var self = this;
 		var srcCount = note.sources.length;
+		var kids = kidsOf(this.project, note);
+		var label = t(note.col === 0 ? 'note_label_spine' : 'note_label_detail', { title: note.title || t('untitled'), row: note.row + 1 });
+		if (kids.length) label += ', ' + plural(kids.length, 'kids_count_one', 'kids_count_many');
 		var el = h('div', {
-			class: 'vb-note' + (note.id === this.selectedId ? ' is-selected' : '') + (note.col === 0 ? ' is-spine' : ''),
+			class: 'vb-note' + (note.id === this.selectedId ? ' is-selected' : '') + (note.col === 0 ? ' is-spine' : '') + (kids.length ? ' has-kids' : ''),
 			style: 'background:' + note.color + ';--vb-tilt:' + tilt(note.id) + 'deg',
 			tabindex: '0',
 			role: 'button',
-			'aria-label': t(note.col === 0 ? 'note_label_spine' : 'note_label_detail', { title: note.title || t('untitled'), row: note.row + 1 }),
+			'aria-label': label,
+			'aria-haspopup': 'menu',
 			'data-id': note.id
 		},
 			h('span', { class: 'vb-note-title' + (note.title ? '' : ' is-empty') }, note.title || t('untitled')),
 			note.text ? h('span', { class: 'vb-note-text' }, note.text) : null,
-			srcCount ? h('span', { class: 'vb-note-badge' }, plural(srcCount, 'sources_one', 'sources_many')) : null
+			kids.length || srcCount ? h('span', { class: 'vb-note-foot' },
+				kids.slice(0, 2).map(function (k) {
+					return h('span', { class: 'vb-kid', style: 'background:' + k.color, title: k.title || t('untitled') }, '\u21b3 ' + (k.title || t('untitled')));
+				}),
+				kids.length > 2 ? h('span', { class: 'vb-kid vb-kid-more' }, '+' + (kids.length - 2)) : null,
+				srcCount ? h('span', { class: 'vb-note-badge' }, plural(srcCount, 'sources_one', 'sources_many')) : null
+			) : null
 		);
 		this.makeDraggable(el, note);
+		// Rechtermuisknop (of de menutoets / Shift+F10): briefje van de crazywall eronder hangen.
+		el.addEventListener('contextmenu', function (e) {
+			e.preventDefault();
+			var x = e.clientX, y = e.clientY;
+			if (!x && !y) { var r = el.getBoundingClientRect(); x = r.left + 24; y = r.top + 24; }
+			self.openWallPicker(note, x, y, el);
+		});
 		el.addEventListener('keydown', function (e) {
 			if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); self.openPanel(note.id); return; }
 			if (!e.altKey) return;
@@ -972,11 +1111,16 @@
 		var self = this;
 		var note = this.noteById(id);
 		if (!note) return;
+		if (this.wallTimer) { clearTimeout(this.wallTimer); this.wallTimer = null; this.persist(); }
+		this.panelMode = 'note';
+		this.selectedWallId = null;
 		this.selectedId = id;
 		this.panel.hidden = false;
 		this.panel.innerHTML = '';
 		this.root.classList.add('has-panel');
 		this.markSelected();
+		this.kidList = h('ul', { class: 'vb-sources vb-kids' });
+		this.drawKids(note);
 
 		var titleInput = h('input', { type: 'text', class: 'vb-input', value: note.title, placeholder: t('title_placeholder'), id: 'vb-title-' + id });
 		titleInput.addEventListener('input', function () { note.title = titleInput.value; self.changedText(); });
@@ -1042,6 +1186,13 @@
 			h('label', { class: 'vb-label', for: 'vb-title-' + id }, t('title')), titleInput,
 			h('span', { class: 'vb-label' }, t('color')), swatches,
 			h('label', { class: 'vb-label', for: 'vb-text-' + id }, t('description')), textArea,
+			h('span', { class: 'vb-label' }, t('kids')), this.kidList,
+			h('div', { class: 'vb-kids-add' },
+				h('button', { type: 'button', class: 'vb-btn vb-btn-small', 'aria-haspopup': 'menu', onclick: function (e) {
+					var r = e.currentTarget.getBoundingClientRect();
+					self.openWallPicker(note, r.left, r.bottom + 4, e.currentTarget);
+				} }, t('kids_add'))
+			),
 			h('span', { class: 'vb-label' }, t('sources')), this.sourceList,
 			h('div', { class: 'vb-addsource' },
 				linkLabel, linkUrl,
@@ -1059,7 +1210,7 @@
 		this.refreshPanelPosition();
 		titleInput.focus();
 		this.escHandler = this.escHandler || function (e) {
-			if (e.key === 'Escape' && !document.querySelector('.vb-overlay')) self.closePanel();
+			if (e.key === 'Escape' && !document.querySelector('.vb-overlay, .vb-picker')) self.closePanel();
 		};
 		document.addEventListener('keydown', this.escHandler);
 	};
@@ -1086,14 +1237,24 @@
 
 	App.prototype.closePanel = function () {
 		if (this.textTimer) { clearTimeout(this.textTimer); this.textTimer = null; this.persist(); }
-		var id = this.selectedId;
+		if (this.wallTimer) { clearTimeout(this.wallTimer); this.wallTimer = null; this.persist(); }
+		if (this.picker) this.picker.close(false);
+		var id = this.selectedId, wallId = this.selectedWallId;
 		this.selectedId = null;
+		this.selectedWallId = null;
+		this.panelMode = null;
 		this.panel.hidden = true;
 		this.panel.innerHTML = '';
 		this.positionLabel = null;
+		this.kidList = this.wallFiles = this.wallLinks = null;
 		this.root.classList.remove('has-panel');
 		if (this.escHandler) document.removeEventListener('keydown', this.escHandler);
-		if (this.view === 'board' && this.grid) {
+		if (this.view !== 'board') return;
+		if (this.tab === 'wall' && this.wallItems) {
+			this.drawWall();
+			var item = wallId && this.wallItems.querySelector('[data-id="' + wallId + '"]');
+			if (item) item.focus({ preventScroll: true });
+		} else if (this.tab === 'board' && this.grid) {
 			this.drawGrid();
 			var el = id && this.grid.querySelector('[data-id="' + id + '"]');
 			if (el) el.focus({ preventScroll: true });
@@ -1155,6 +1316,765 @@
 		});
 	};
 
+	/* ------------------------------------------------------------------ *
+	 * Crazywall — een onbeperkte wand met briefjes en draden.
+	 * Uploaden kan hier niet: een regel met alleen een bestandsnaam
+	 * wordt herkend en krijgt een pictogram van het bestandstype.
+	 * ------------------------------------------------------------------ */
+
+	var WALL_W = 190; // breedte van een briefje op de wand
+	var FILE_TYPES = {
+		pdf: ['pdf'],
+		text: ['doc', 'docx', 'odt', 'rtf', 'pages', 'txt', 'md'],
+		sheet: ['xls', 'xlsx', 'ods', 'csv', 'tsv', 'numbers'],
+		slides: ['ppt', 'pptx', 'odp', 'key'],
+		image: ['jpg', 'jpeg', 'png', 'gif', 'heic', 'webp', 'tif', 'tiff', 'bmp', 'svg', 'raw'],
+		audio: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'wma', 'opus'],
+		video: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv'],
+		archive: ['zip', 'rar', '7z', 'gz', 'tar'],
+		mail: ['eml', 'msg', 'mbox'],
+		web: ['html', 'htm']
+	};
+	var EXT_TYPE = {};
+	Object.keys(FILE_TYPES).forEach(function (type) { FILE_TYPES[type].forEach(function (ext) { EXT_TYPE[ext] = type; }); });
+
+	// Een regel die alleen uit een bestandsnaam (of pad) bestaat, bijvoorbeeld "notulen raad 12-3.pdf".
+	function fileOfLine(line) {
+		var name = String(line || '').trim();
+		if (!name || name.length > 200 || /:\/\//.test(name) || /[<>"|?*]/.test(name)) return null;
+		if (name.indexOf(':') >= 0 && !/^[A-Za-z]:[\\\/]/.test(name)) return null;
+		var m = /\.([a-z0-9]{1,7})$/i.exec(name);
+		if (!m || name.length === m[0].length) return null;
+		var ext = m[1].toLowerCase();
+		return EXT_TYPE[ext] ? { name: name, ext: ext, type: EXT_TYPE[ext] } : null;
+	}
+	function filesIn(text) {
+		return String(text || '').split('\n').map(fileOfLine).filter(Boolean);
+	}
+	function fileIcon(f) {
+		return h('span', { class: 'vb-file-icon vb-ft-' + f.type, 'aria-hidden': 'true', title: t('ft_' + f.type) }, f.ext.slice(0, 4).toUpperCase());
+	}
+	function fileChip(f) {
+		return h('span', { class: 'vb-file', title: t('ft_' + f.type) + ': ' + f.name },
+			fileIcon(f),
+			h('span', { class: 'vb-file-name' }, f.name),
+			h('span', { class: 'vb-visually-hidden' }, ' (' + t('ft_' + f.type) + ')')
+		);
+	}
+	// Tekst van een briefje, met bestandsregels als pictogram + naam.
+	function richText(text) {
+		return String(text || '').split('\n').map(function (line) {
+			var f = fileOfLine(line);
+			return f ? fileChip(f) : h('span', { class: 'vb-wall-line' }, line || ' ');
+		});
+	}
+
+	function svgEl(tag, attrs) {
+		var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+		Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+		return el;
+	}
+
+	// Een draad hangt een beetje door, als een touwtje tussen twee punaises.
+	function wireGeometry(a, b) {
+		var dist = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+		var sag = Math.min(80, dist * 0.18) + 6;
+		var c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + sag };
+		return {
+			d: 'M ' + a.x + ' ' + a.y + ' Q ' + c.x + ' ' + c.y + ' ' + b.x + ' ' + b.y,
+			mid: { x: (a.x + 2 * c.x + b.x) / 4, y: (a.y + 2 * c.y + b.y) / 4 }
+		};
+	}
+	function pinPos(it) { return { x: it.x + WALL_W / 2, y: it.y + 3 }; }
+
+	// Kleurkeuze voor een briefje (dezelfde kleuren als op het storyboard).
+	function swatchPicker(getColor, setColor) {
+		var box = h('div', { class: 'vb-swatches', role: 'radiogroup', 'aria-label': t('color') });
+		function draw() {
+			box.innerHTML = '';
+			COLORS.forEach(function (c) {
+				var active = getColor().toLowerCase() === c.hex.toLowerCase();
+				box.appendChild(h('button', {
+					type: 'button', class: 'vb-swatch' + (active ? ' is-active' : ''), role: 'radio',
+					'aria-checked': active ? 'true' : 'false', 'aria-label': t(c.name), title: t(c.name),
+					style: 'background:' + c.hex,
+					onclick: function () { setColor(c.hex); draw(); }
+				}));
+			});
+			var custom = h('input', { type: 'color', class: 'vb-swatch-custom', value: getColor(), title: t('custom_color'), 'aria-label': t('custom_color_label') });
+			custom.addEventListener('input', function () { setColor(custom.value); });
+			custom.addEventListener('change', draw);
+			box.appendChild(custom);
+		}
+		draw();
+		return box;
+	}
+
+	App.prototype.wallItem = function (id) {
+		var items = this.project.wall.items;
+		for (var i = 0; i < items.length; i++) if (items[i].id === id) return items[i];
+		return null;
+	};
+	App.prototype.notesUsing = function (id) {
+		return this.project.notes.filter(function (n) { return n.refs.indexOf(id) >= 0; });
+	};
+	// Schuiven en zoomen bewaren zonder "laatst bewerkt" te veranderen.
+	App.prototype.saveView = function () {
+		var self = this;
+		clearTimeout(this.viewTimer);
+		this.viewTimer = setTimeout(function () { Store.save(self.lib); }, 300);
+	};
+
+	App.prototype.setTab = function (tab) {
+		if (tab === this.tab) return;
+		this.closePanel();
+		this.tab = tab;
+		try { localStorage.setItem(TAB_KEY, tab); } catch (e) { /* niet erg */ }
+		this.render();
+		var btn = this.top.querySelector('.vb-tab.is-active');
+		if (btn) btn.focus();
+	};
+
+	App.prototype.tabs = function () {
+		var self = this;
+		var list = [['board', t('tab_storyboard')], ['wall', t('tab_wall')]];
+		var bar = h('div', { class: 'vb-tabs', role: 'tablist', 'aria-label': t('views') });
+		list.forEach(function (tab, i) {
+			var active = self.tab === tab[0];
+			bar.appendChild(h('button', {
+				type: 'button', role: 'tab', class: 'vb-tab' + (active ? ' is-active' : ''),
+				'aria-selected': active ? 'true' : 'false', tabindex: active ? '0' : '-1',
+				onclick: function () { self.setTab(tab[0]); },
+				onkeydown: function (e) {
+					if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+					e.preventDefault();
+					self.setTab(list[(i + (e.key === 'ArrowRight' ? 1 : list.length - 1)) % list.length][0]);
+				}
+			}, tab[1], tab[0] === 'wall' && self.project.wall.items.length ? h('span', { class: 'vb-tab-count' }, String(self.project.wall.items.length)) : null));
+		});
+		return bar;
+	};
+
+	App.prototype.renderWall = function () {
+		var self = this;
+		this.wallEl = h('div', { class: 'vb-wall', role: 'region', 'aria-label': t('tab_wall') });
+		this.wallLayer = h('div', { class: 'vb-wall-layer' });
+		this.wallSvg = svgEl('svg', { class: 'vb-wall-lines' });
+		this.wallItems = h('div', { class: 'vb-wall-items' });
+		this.wallLayer.appendChild(this.wallSvg);
+		this.wallLayer.appendChild(this.wallItems);
+		this.wallEl.appendChild(this.wallLayer);
+		this.zoomLabel = h('span', { class: 'vb-zoom-label' });
+		function zoomBtn(text, label, factor) {
+			return h('button', { type: 'button', class: 'vb-icon-btn vb-zoom-btn', title: label, 'aria-label': label, onclick: function () { self.zoomBy(factor); } }, text);
+		}
+		this.wallEl.appendChild(h('div', { class: 'vb-wall-tools' },
+			zoomBtn('−', t('zoom_out'), 1 / 1.25),
+			this.zoomLabel,
+			zoomBtn('+', t('zoom_in'), 1.25),
+			h('button', { type: 'button', class: 'vb-btn vb-btn-small', onclick: function () { self.fitWall(); } }, t('zoom_fit'))
+		));
+		this.wallEmpty = h('p', { class: 'vb-wall-empty' }, t('wall_empty'));
+		this.wallEl.appendChild(this.wallEmpty);
+		this.main.appendChild(this.wallEl);
+		this.bindWall();
+		this.applyView();
+		this.drawWall();
+	};
+
+	App.prototype.applyView = function () {
+		var v = this.project.wall.view;
+		this.wallLayer.style.transform = 'translate(' + v.x + 'px,' + v.y + 'px) scale(' + v.z + ')';
+		this.wallEl.style.backgroundSize = (18 * v.z) + 'px ' + (18 * v.z) + 'px';
+		this.wallEl.style.backgroundPosition = v.x + 'px ' + v.y + 'px';
+		this.zoomLabel.textContent = Math.round(v.z * 100) + '%';
+		if (this.wireBar) this.wireBar.style.transform = 'translate(-50%, -50%) scale(' + (1 / v.z) + ')';
+	};
+
+	App.prototype.zoomAt = function (sx, sy, factor) {
+		var v = this.project.wall.view;
+		var z = Math.max(0.2, Math.min(2.5, v.z * factor));
+		var wx = (sx - v.x) / v.z, wy = (sy - v.y) / v.z;
+		v.x = Math.round(sx - wx * z);
+		v.y = Math.round(sy - wy * z);
+		v.z = Math.round(z * 1000) / 1000;
+		this.applyView();
+		this.saveView();
+	};
+	App.prototype.zoomBy = function (factor) {
+		this.zoomAt(this.wallEl.clientWidth / 2, this.wallEl.clientHeight / 2, factor);
+	};
+	App.prototype.fitWall = function () {
+		var items = this.project.wall.items, v = this.project.wall.view;
+		if (!items.length) { v.x = 40; v.y = 40; v.z = 1; this.applyView(); this.saveView(); return; }
+		var self = this, minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+		items.forEach(function (it) {
+			var el = self.wallItems.querySelector('[data-id="' + it.id + '"]');
+			minX = Math.min(minX, it.x); minY = Math.min(minY, it.y - 10);
+			maxX = Math.max(maxX, it.x + WALL_W); maxY = Math.max(maxY, it.y + (el ? el.offsetHeight : 120));
+		});
+		var W = this.wallEl.clientWidth, H = this.wallEl.clientHeight, pad = 60;
+		var z = Math.max(0.2, Math.min(1.5, (W - 2 * pad) / (maxX - minX), (H - 2 * pad) / (maxY - minY)));
+		v.z = Math.round(z * 1000) / 1000;
+		v.x = Math.round(W / 2 - (minX + maxX) / 2 * v.z);
+		v.y = Math.round(H / 2 - (minY + maxY) / 2 * v.z);
+		this.applyView();
+		this.saveView();
+	};
+	App.prototype.toWorld = function (clientX, clientY) {
+		var r = this.wallEl.getBoundingClientRect(), v = this.project.wall.view;
+		return { x: (clientX - r.left - v.x) / v.z, y: (clientY - r.top - v.y) / v.z };
+	};
+
+	// Schuiven met slepen (ook met de middelste muisknop), zoomen met Ctrl + wiel of twee vingers.
+	App.prototype.bindWall = function () {
+		var self = this, el = this.wallEl, pointers = {}, pan = null, pinch = null;
+		function view() { return self.project.wall.view; }
+		function isBackground(target) {
+			return target === el || target === self.wallLayer || target === self.wallItems || target === self.wallSvg || target === self.wallEmpty;
+		}
+		function dist(a, b) { return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)) || 1; }
+		el.addEventListener('pointerdown', function (e) {
+			if (!(e.button === 1 || (e.button === 0 && isBackground(e.target)))) return;
+			e.preventDefault();
+			pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+			el.setPointerCapture(e.pointerId);
+			var ids = Object.keys(pointers);
+			if (ids.length === 2) {
+				pinch = { d: dist(pointers[ids[0]], pointers[ids[1]]), z: view().z };
+				pan = null;
+			} else if (ids.length === 1) {
+				pan = { x: e.clientX, y: e.clientY, vx: view().x, vy: view().y, moved: false };
+			}
+		});
+		el.addEventListener('pointermove', function (e) {
+			if (!pointers[e.pointerId]) return;
+			pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+			var ids = Object.keys(pointers);
+			if (pinch && ids.length === 2) {
+				var a = pointers[ids[0]], b = pointers[ids[1]], r = el.getBoundingClientRect();
+				self.zoomAt((a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, (dist(a, b) / pinch.d) * pinch.z / view().z);
+			} else if (pan) {
+				var dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+				if (Math.abs(dx) + Math.abs(dy) > 3) { pan.moved = true; el.classList.add('is-panning'); }
+				view().x = pan.vx + dx;
+				view().y = pan.vy + dy;
+				self.applyView();
+			}
+		});
+		function up(e) {
+			if (!pointers[e.pointerId]) return;
+			delete pointers[e.pointerId];
+			if (pinch) { if (Object.keys(pointers).length < 2) { pinch = null; pan = null; } return; }
+			if (pan) {
+				if (pan.moved) self.saveView();
+				else if (e.type === 'pointerup' && self.selectedLineId) self.selectLine(null);
+				pan = null;
+				el.classList.remove('is-panning');
+			}
+		}
+		el.addEventListener('pointerup', up);
+		el.addEventListener('pointercancel', up);
+		el.addEventListener('dblclick', function (e) {
+			if (!isBackground(e.target)) return;
+			var w = self.toWorld(e.clientX, e.clientY);
+			self.addWallItem(w.x - WALL_W / 2, w.y - 12);
+		});
+		el.addEventListener('wheel', function (e) {
+			e.preventDefault();
+			var r = el.getBoundingClientRect();
+			if (e.ctrlKey || e.metaKey) {
+				self.zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.002)));
+			} else {
+				var k = e.deltaMode ? 30 : 1;
+				view().x -= Math.round(e.deltaX * k);
+				view().y -= Math.round(e.deltaY * k);
+				self.applyView();
+				self.saveView();
+			}
+		}, { passive: false });
+	};
+
+	App.prototype.drawWall = function () {
+		var self = this;
+		this.wallItems.innerHTML = '';
+		this.project.wall.items.forEach(function (it) { self.wallItems.appendChild(self.wallItemEl(it)); });
+		this.wallEmpty.hidden = this.project.wall.items.length > 0;
+		this.drawLines();
+	};
+
+	App.prototype.replaceWallItem = function (it) {
+		var old = this.wallItems && this.wallItems.querySelector('[data-id="' + it.id + '"]');
+		if (old) old.replaceWith(this.wallItemEl(it));
+	};
+
+	App.prototype.wallItemEl = function (it) {
+		var self = this;
+		var used = this.notesUsing(it.id).length;
+		var pin = h('span', { class: 'vb-wall-pin', title: t('pin_hint') });
+		var el = h('div', {
+			class: 'vb-wall-item' + (it.id === this.selectedWallId ? ' is-selected' : ''),
+			style: 'left:' + it.x + 'px;top:' + it.y + 'px;width:' + WALL_W + 'px;background:' + it.color + ';--vb-tilt:' + tilt(it.id) + 'deg',
+			tabindex: '0', role: 'button', 'data-id': it.id,
+			'aria-label': t('wall_item_label', { title: it.title || t('untitled') })
+		},
+			pin,
+			h('span', { class: 'vb-wall-title' + (it.title ? '' : ' is-empty') }, it.title || t('untitled')),
+			it.text ? h('div', { class: 'vb-wall-text' }, richText(it.text)) : null,
+			used ? h('span', { class: 'vb-note-badge vb-wall-used' }, used === 1 ? t('used_one') : t('used_many', { n: used })) : null
+		);
+
+		// Verslepen; klikken zonder slepen opent het briefje.
+		var start = null, moved = false;
+		el.addEventListener('pointerdown', function (e) {
+			if (e.button !== 0 || e.target === pin) return;
+			e.stopPropagation();
+			start = { x: e.clientX, y: e.clientY, ix: it.x, iy: it.y, id: e.pointerId };
+			moved = false;
+			el.style.zIndex = String(++self.wallZ);
+			el.setPointerCapture(e.pointerId);
+		});
+		el.addEventListener('pointermove', function (e) {
+			if (!start || e.pointerId !== start.id) return;
+			var z = self.project.wall.view.z;
+			var dx = (e.clientX - start.x) / z, dy = (e.clientY - start.y) / z;
+			if (!moved && Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y) < 5) return;
+			moved = true;
+			el.classList.add('is-dragging');
+			it.x = Math.round(start.ix + dx);
+			it.y = Math.round(start.iy + dy);
+			el.style.left = it.x + 'px';
+			el.style.top = it.y + 'px';
+			self.drawLines();
+		});
+		function end(cancelled) {
+			if (!start) return;
+			start = null;
+			el.classList.remove('is-dragging');
+			if (moved) self.persist();
+			else if (!cancelled) self.openWallPanel(it.id);
+		}
+		el.addEventListener('pointerup', function () { end(false); });
+		el.addEventListener('pointercancel', function () { end(true); });
+		el.addEventListener('keydown', function (e) {
+			if (e.target !== el) return;
+			if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); self.openWallPanel(it.id); return; }
+			if (e.key === 'Delete') { e.preventDefault(); self.deleteWallItem(it); return; }
+			var step = e.shiftKey ? 50 : 10;
+			var d = { ArrowUp: [0, -step], ArrowDown: [0, step], ArrowLeft: [-step, 0], ArrowRight: [step, 0] }[e.key];
+			if (!d) return;
+			e.preventDefault();
+			it.x += d[0]; it.y += d[1];
+			el.style.left = it.x + 'px'; el.style.top = it.y + 'px';
+			self.drawLines();
+			clearTimeout(self.moveTimer);
+			self.moveTimer = setTimeout(function () { self.persist(); }, 400);
+		});
+
+		// Draad spannen: sleep vanaf de punaise naar een ander briefje.
+		var linking = false, target = null;
+		pin.addEventListener('pointerdown', function (e) {
+			if (e.button !== 0) return;
+			e.stopPropagation();
+			e.preventDefault();
+			linking = true;
+			pin.setPointerCapture(e.pointerId);
+		});
+		pin.addEventListener('pointermove', function (e) {
+			if (!linking) return;
+			self.drawLines({ from: pinPos(it), to: self.toWorld(e.clientX, e.clientY) });
+			var under = document.elementFromPoint(e.clientX, e.clientY);
+			var item = under && under.closest('.vb-wall-item');
+			if (item === el) item = null;
+			if (item !== target) {
+				if (target) target.classList.remove('is-target');
+				target = item;
+				if (target) target.classList.add('is-target');
+			}
+		});
+		function stopLink(e, cancelled) {
+			if (!linking) return;
+			linking = false;
+			if (target) target.classList.remove('is-target');
+			var other = target && target.getAttribute('data-id');
+			target = null;
+			if (!cancelled && other) self.addLine(it.id, other);
+			else self.drawLines();
+		}
+		pin.addEventListener('pointerup', function (e) { stopLink(e, false); });
+		pin.addEventListener('pointercancel', function (e) { stopLink(e, true); });
+		pin.addEventListener('click', function (e) { e.stopPropagation(); });
+		return el;
+	};
+
+	App.prototype.drawLines = function (temp) {
+		var self = this, wall = this.project.wall, svg = this.wallSvg;
+		if (!svg) return;
+		while (svg.firstChild) svg.removeChild(svg.firstChild);
+		if (this.wireBar) { this.wireBar.remove(); this.wireBar = null; }
+		var segs = [];
+		wall.lines.forEach(function (l) {
+			var a = self.wallItem(l.from), b = self.wallItem(l.to);
+			if (a && b) segs.push({ line: l, a: a, b: b, from: pinPos(a), to: pinPos(b) });
+		});
+		if (temp) segs.push({ temp: true, from: temp.from, to: temp.to });
+		if (!segs.length) { svg.style.display = 'none'; return; }
+		var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+		segs.forEach(function (s) {
+			minX = Math.min(minX, s.from.x, s.to.x); maxX = Math.max(maxX, s.from.x, s.to.x);
+			minY = Math.min(minY, s.from.y, s.to.y); maxY = Math.max(maxY, s.from.y, s.to.y);
+		});
+		minX -= 40; minY -= 40; maxX += 40; maxY += 130;
+		svg.style.display = '';
+		svg.style.left = minX + 'px';
+		svg.style.top = minY + 'px';
+		svg.setAttribute('width', maxX - minX);
+		svg.setAttribute('height', maxY - minY);
+		svg.setAttribute('viewBox', minX + ' ' + minY + ' ' + (maxX - minX) + ' ' + (maxY - minY));
+		segs.forEach(function (s) {
+			var geo = wireGeometry(s.from, s.to);
+			if (s.temp) { svg.appendChild(svgEl('path', { d: geo.d, class: 'vb-wire-temp' })); return; }
+			var l = s.line, selected = l.id === self.selectedLineId;
+			var g = svgEl('g', {
+				class: 'vb-wire' + (selected ? ' is-selected' : ''), tabindex: '0', role: 'button', 'data-id': l.id,
+				'aria-label': t('wire_label', { a: s.a.title || t('untitled'), b: s.b.title || t('untitled') })
+			});
+			g.appendChild(svgEl('path', { d: geo.d, class: 'vb-wire-hit' }));
+			g.appendChild(svgEl('path', { d: geo.d, class: 'vb-wire-line', stroke: l.color }));
+			g.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+			g.addEventListener('click', function () { self.selectLine(l.id); });
+			g.addEventListener('keydown', function (e) {
+				if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); self.selectLine(l.id); }
+				if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); self.deleteLine(l.id); }
+				if (e.key === 'Escape') self.selectLine(null);
+			});
+			svg.appendChild(g);
+			if (selected) self.showWireBar(l, geo.mid);
+		});
+		// Punaises bovenop de draden.
+		segs.forEach(function (s) {
+			if (s.temp) return;
+			[s.from, s.to].forEach(function (p) { svg.appendChild(svgEl('circle', { cx: p.x, cy: p.y, r: 2.4, class: 'vb-wire-end' })); });
+		});
+	};
+
+	// Werkbalkje bij een geselecteerde draad: kleur kiezen of verwijderen.
+	App.prototype.showWireBar = function (l, mid) {
+		var self = this;
+		var bar = h('div', { class: 'vb-wire-bar', style: 'left:' + mid.x + 'px;top:' + mid.y + 'px' },
+			LINE_COLORS.map(function (c) {
+				var active = c.hex.toLowerCase() === l.color.toLowerCase();
+				return h('button', {
+					type: 'button', class: 'vb-wire-color' + (active ? ' is-active' : ''), style: 'background:' + c.hex,
+					title: t(c.name), 'aria-label': t('wire_color', { name: t(c.name) }), 'aria-pressed': active ? 'true' : 'false',
+					onclick: function () { l.color = c.hex; self.persist(); self.drawLines(); self.focusWire(l.id); }
+				});
+			}),
+			h('button', { type: 'button', class: 'vb-icon-btn', title: t('wire_remove'), 'aria-label': t('wire_remove'), onclick: function () { self.deleteLine(l.id); } }, '×')
+		);
+		bar.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+		bar.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+		this.wireBar = bar;
+		this.wallLayer.appendChild(bar);
+		this.applyView();
+	};
+	App.prototype.focusWire = function (id) {
+		var g = this.wallSvg && this.wallSvg.querySelector('[data-id="' + id + '"]');
+		if (g && g.focus) g.focus();
+	};
+	App.prototype.selectLine = function (id) {
+		this.selectedLineId = id;
+		this.drawLines();
+		if (id) this.focusWire(id);
+	};
+	App.prototype.addLine = function (from, to) {
+		if (!from || !to || from === to) return;
+		var exists = this.project.wall.lines.some(function (l) { return (l.from === from && l.to === to) || (l.from === to && l.to === from); });
+		if (exists) { toast(t('wire_exists')); this.drawLines(); return; }
+		this.project.wall.lines.push({ id: uid(), from: from, to: to, color: LINE_COLORS[0].hex });
+		this.persist();
+		this.drawLines();
+		if (this.panelMode === 'wall' && this.wallLinks) this.drawWallLinks();
+	};
+	App.prototype.deleteLine = function (id) {
+		this.project.wall.lines = this.project.wall.lines.filter(function (l) { return l.id !== id; });
+		if (this.selectedLineId === id) this.selectedLineId = null;
+		this.persist();
+		this.drawLines();
+		if (this.panelMode === 'wall' && this.wallLinks) this.drawWallLinks();
+	};
+
+	App.prototype.addWallItem = function (x, y) {
+		var items = this.project.wall.items;
+		if (x === undefined) {
+			var c = this.toWorld(this.wallEl.getBoundingClientRect().left + this.wallEl.clientWidth / 2, this.wallEl.getBoundingClientRect().top + this.wallEl.clientHeight / 2);
+			x = c.x - WALL_W / 2;
+			y = c.y - 60;
+			// Niet precies op een ander briefje plakken.
+			var busy = function () { return items.some(function (it) { return Math.abs(it.x - x) < 20 && Math.abs(it.y - y) < 20; }); };
+			while (busy()) { x += 24; y += 24; }
+		}
+		var it = { id: uid(), x: Math.round(x), y: Math.round(y), title: '', text: '', color: COLORS[0].hex };
+		items.push(it);
+		this.persist();
+		this.drawWall();
+		var el = this.wallItems.querySelector('[data-id="' + it.id + '"]');
+		if (el) el.classList.add('is-new');
+		this.openWallPanel(it.id);
+	};
+
+	App.prototype.deleteWallItem = function (it) {
+		var self = this;
+		var used = this.notesUsing(it.id).length;
+		var name = it.title || t('untitled');
+		confirmBox(t('delete_note'), used ? t('delete_wall_used', { name: name, n: used }) : t('delete_wall_text', { name: name }), t('delete'), function () {
+			var wall = self.project.wall;
+			wall.items = wall.items.filter(function (x) { return x.id !== it.id; });
+			wall.lines = wall.lines.filter(function (l) { return l.from !== it.id && l.to !== it.id; });
+			self.project.notes.forEach(function (n) { n.refs = n.refs.filter(function (id) { return id !== it.id; }); });
+			if (self.selectedWallId === it.id) self.closePanel();
+			self.persist();
+			if (self.wallItems) self.drawWall();
+		});
+	};
+
+	// Bewerkpaneel voor een briefje op de wand.
+	App.prototype.openWallPanel = function (id) {
+		var self = this;
+		var it = this.wallItem(id);
+		if (!it) return;
+		if (this.textTimer) { clearTimeout(this.textTimer); this.textTimer = null; this.persist(); }
+		this.panelMode = 'wall';
+		this.selectedId = null;
+		this.selectedWallId = id;
+		this.panel.hidden = false;
+		this.panel.innerHTML = '';
+		this.root.classList.add('has-panel');
+		Array.prototype.forEach.call(this.wallItems.querySelectorAll('.vb-wall-item'), function (n) {
+			n.classList.toggle('is-selected', n.getAttribute('data-id') === id);
+		});
+
+		var titleInput = h('input', { type: 'text', class: 'vb-input', value: it.title, placeholder: t('title_placeholder'), id: 'vb-wtitle-' + id });
+		titleInput.addEventListener('input', function () { it.title = titleInput.value; self.changedWall(it); });
+		var textArea = h('textarea', { class: 'vb-input vb-textarea', rows: '7', placeholder: t('text_placeholder'), id: 'vb-wtext-' + id, 'aria-describedby': 'vb-whint-' + id });
+		textArea.value = it.text;
+		textArea.addEventListener('input', function () { it.text = textArea.value; self.drawWallFiles(it); self.changedWall(it); });
+		var colors = swatchPicker(function () { return it.color; }, function (hex) { it.color = hex; self.persist(); self.replaceWallItem(it); });
+
+		this.wallFiles = h('ul', { class: 'vb-wall-files' });
+		this.wallLinks = h('div', { class: 'vb-wall-links' });
+		this.drawWallFiles(it);
+		this.drawWallLinks();
+
+		var usedBy = this.notesUsing(id);
+		var usedList = usedBy.length ? h('ul', { class: 'vb-sources' }, usedBy.map(function (n) {
+			return h('li', { class: 'vb-source' },
+				h('button', { type: 'button', class: 'vb-source-link', onclick: function () { self.showOnBoard(n.id); } },
+					(n.col === 0 ? t('pos_spine', { row: n.row + 1 }) : t('pos_detail', { col: n.col, row: n.row + 1 })) + ': ' + (n.title || t('untitled')))
+			);
+		})) : h('p', { class: 'vb-note-hint vb-hint-top' }, t('on_storyboard_none'));
+
+		this.panel.appendChild(h('div', { class: 'vb-panel-head' },
+			h('h2', { class: 'vb-panel-title' }, t('wall_note')),
+			h('button', { type: 'button', class: 'vb-icon-btn vb-close', 'aria-label': t('close'), onclick: function () { self.closePanel(); } }, '×')
+		));
+		this.panel.appendChild(h('div', { class: 'vb-panel-body' },
+			h('label', { class: 'vb-label', for: 'vb-wtitle-' + id }, t('title')), titleInput,
+			h('span', { class: 'vb-label' }, t('color')), colors,
+			h('label', { class: 'vb-label', for: 'vb-wtext-' + id }, t('description')), textArea,
+			h('p', { class: 'vb-note-hint vb-hint-under', id: 'vb-whint-' + id }, t('wall_text_hint')),
+			h('span', { class: 'vb-label' }, t('wall_files')), this.wallFiles,
+			h('span', { class: 'vb-label' }, t('wires')), this.wallLinks,
+			h('span', { class: 'vb-label' }, t('on_storyboard')), usedList
+		));
+		this.panel.appendChild(h('div', { class: 'vb-panel-foot' },
+			h('button', { type: 'button', class: 'vb-btn vb-btn-danger', onclick: function () { self.deleteWallItem(it); } }, t('delete_note'))
+		));
+		titleInput.focus();
+		this.escHandler = this.escHandler || function (e) {
+			if (e.key === 'Escape' && !document.querySelector('.vb-overlay, .vb-picker')) self.closePanel();
+		};
+		document.addEventListener('keydown', this.escHandler);
+	};
+
+	App.prototype.changedWall = function (it) {
+		var self = this;
+		clearTimeout(this.wallTimer);
+		this.wallTimer = setTimeout(function () { self.wallTimer = null; self.persist(); self.replaceWallItem(it); }, 300);
+	};
+
+	App.prototype.drawWallFiles = function (it) {
+		var list = this.wallFiles;
+		if (!list) return;
+		list.innerHTML = '';
+		var files = filesIn(it.text);
+		if (!files.length) { list.appendChild(h('li', { class: 'vb-source-empty' }, t('wall_files_none'))); return; }
+		files.forEach(function (f) { list.appendChild(h('li', null, fileChip(f))); });
+	};
+
+	App.prototype.drawWallLinks = function () {
+		var self = this, box = this.wallLinks, id = this.selectedWallId, wall = this.project.wall;
+		if (!box || !id) return;
+		box.innerHTML = '';
+		var mine = wall.lines.filter(function (l) { return l.from === id || l.to === id; });
+		var list = h('ul', { class: 'vb-sources' });
+		if (!mine.length) list.appendChild(h('li', { class: 'vb-source-empty' }, t('wires_none')));
+		var linked = {};
+		mine.forEach(function (l) {
+			var other = self.wallItem(l.from === id ? l.to : l.from);
+			if (!other) return;
+			linked[other.id] = true;
+			list.appendChild(h('li', { class: 'vb-source' },
+				h('span', { class: 'vb-wire-dot', style: 'background:' + l.color, 'aria-hidden': 'true' }),
+				h('span', { class: 'vb-wire-other' }, other.title || t('untitled')),
+				h('button', { type: 'button', class: 'vb-icon-btn', title: t('wire_remove'), 'aria-label': t('wire_remove') + ': ' + (other.title || t('untitled')), onclick: function () { self.deleteLine(l.id); } }, '×')
+			));
+		});
+		box.appendChild(list);
+		var options = wall.items.filter(function (x) { return x.id !== id && !linked[x.id]; });
+		if (!options.length) return;
+		var selId = 'vb-wireto-' + id;
+		var select = h('select', { class: 'vb-select vb-wire-select', id: selId },
+			h('option', { value: '' }, t('wire_to')),
+			options.map(function (x) { return h('option', { value: x.id }, x.title || t('untitled')); })
+		);
+		box.appendChild(h('div', { class: 'vb-addsource-actions vb-wire-add' },
+			h('label', { class: 'vb-visually-hidden', for: selId }, t('wire_to')),
+			select,
+			h('button', { type: 'button', class: 'vb-btn vb-btn-small', onclick: function () { if (select.value) self.addLine(id, select.value); } }, t('wire_add'))
+		));
+	};
+
+	// Van de wand naar het storyboard: het plakbriefje openen.
+	App.prototype.showOnBoard = function (noteId) {
+		this.closePanel();
+		this.tab = 'board';
+		try { localStorage.setItem(TAB_KEY, 'board'); } catch (e) { /* niet erg */ }
+		this.render();
+		this.openPanel(noteId);
+		var el = this.grid && this.grid.querySelector('[data-id="' + noteId + '"]');
+		if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+	};
+
+	// Van het storyboard naar de wand: het briefje in het midden zetten en laten oplichten.
+	App.prototype.showOnWall = function (itemId) {
+		var it = this.wallItem(itemId);
+		if (!it) return;
+		this.closePanel();
+		this.tab = 'wall';
+		try { localStorage.setItem(TAB_KEY, 'wall'); } catch (e) { /* niet erg */ }
+		this.render();
+		var v = this.project.wall.view;
+		v.x = Math.round(this.wallEl.clientWidth / 2 - (it.x + WALL_W / 2) * v.z);
+		v.y = Math.round(this.wallEl.clientHeight / 2 - (it.y + 60) * v.z);
+		this.applyView();
+		this.saveView();
+		var el = this.wallItems.querySelector('[data-id="' + itemId + '"]');
+		if (el) { el.classList.add('is-flash'); el.focus({ preventScroll: true }); }
+	};
+
+	/* ---------- Onderliggende briefjes: crazywall-briefjes onder een plakbriefje ---------- */
+
+	App.prototype.toggleRef = function (note, id) {
+		var it = this.wallItem(id);
+		var i = note.refs.indexOf(id);
+		if (i >= 0) note.refs.splice(i, 1); else note.refs.push(id);
+		this.persist();
+		toast(t(i >= 0 ? 'kid_removed' : 'kid_added', { name: note.title || t('untitled') }) + (it && i < 0 ? ': ' + (it.title || t('untitled')) : ''));
+		if (this.tab === 'board' && this.grid) this.drawGrid();
+		if (this.panelMode === 'note' && this.selectedId === note.id && this.kidList) this.drawKids(note);
+	};
+
+	// Keuzemenu met de briefjes van de crazywall (rechtermuisknop op een plakbriefje).
+	App.prototype.openWallPicker = function (note, x, y, returnFocus) {
+		var self = this;
+		if (this.picker) this.picker.close(false);
+		var items = this.project.wall.items;
+		var box = h('div', { class: 'vb-picker vb-scope', role: 'dialog', 'aria-label': t('picker_title'), lang: LANG });
+		var list = h('div', { class: 'vb-picker-list', role: 'menu', 'aria-label': t('picker_title') });
+		var search = items.length > 5 ? h('input', { type: 'search', class: 'vb-input vb-picker-search', placeholder: t('picker_search'), 'aria-label': t('picker_search') }) : null;
+
+		function fill() {
+			list.innerHTML = '';
+			var q = search ? search.value.trim().toLowerCase() : '';
+			var shown = items.filter(function (it) { return !q || (it.title + ' ' + it.text).toLowerCase().indexOf(q) >= 0; });
+			if (!shown.length) list.appendChild(h('p', { class: 'vb-picker-none' }, t('picker_none')));
+			shown.forEach(function (it) {
+				var on = note.refs.indexOf(it.id) >= 0;
+				list.appendChild(h('button', {
+					type: 'button', class: 'vb-picker-item' + (on ? ' is-on' : ''), role: 'menuitemcheckbox', 'aria-checked': on ? 'true' : 'false',
+					onclick: function () { close(true); self.toggleRef(note, it.id); }
+				},
+					h('span', { class: 'vb-picker-dot', style: 'background:' + it.color, 'aria-hidden': 'true' }),
+					h('span', { class: 'vb-picker-name' }, it.title || t('untitled')),
+					h('span', { class: 'vb-picker-files' }, filesIn(it.text).slice(0, 3).map(fileIcon)),
+					h('span', { class: 'vb-picker-check', 'aria-hidden': 'true' }, on ? '✓' : '')
+				));
+			});
+		}
+
+		box.appendChild(h('div', { class: 'vb-picker-head' }, t('picker_title')));
+		box.appendChild(h('div', { class: 'vb-picker-sub' }, t('picker_under', { name: note.title || t('untitled') })));
+		if (!items.length) {
+			box.appendChild(h('p', { class: 'vb-picker-none' }, t('picker_empty')));
+			box.appendChild(h('div', { class: 'vb-picker-foot' },
+				h('button', { type: 'button', class: 'vb-btn vb-btn-small vb-btn-primary', onclick: function () { close(false); self.setTab('wall'); } }, t('go_to_wall'))));
+		} else {
+			if (search) { box.appendChild(search); search.addEventListener('input', fill); }
+			box.appendChild(list);
+			fill();
+		}
+
+		function entries() { return Array.prototype.slice.call(box.querySelectorAll('.vb-picker-search, .vb-picker-item, .vb-picker-foot .vb-btn')); }
+		function onKey(e) {
+			if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return; }
+			if (e.key === 'Tab') { e.preventDefault(); }
+			var all = entries(), i = all.indexOf(document.activeElement);
+			if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); all[(i + 1) % all.length].focus(); }
+			else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) { e.preventDefault(); all[(i - 1 + all.length) % all.length].focus(); }
+		}
+		function onDoc(e) { if (!box.contains(e.target)) close(false); }
+		function close(focusBack) {
+			if (!box.parentNode) return;
+			box.remove();
+			document.removeEventListener('mousedown', onDoc, true);
+			document.removeEventListener('touchstart', onDoc, true);
+			window.removeEventListener('resize', onResize);
+			self.picker = null;
+			if (focusBack && returnFocus && document.body.contains(returnFocus)) returnFocus.focus();
+		}
+		function onResize() { close(false); }
+		box.addEventListener('keydown', onKey);
+		box.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+		document.body.appendChild(box);
+		var w = box.offsetWidth, hgt = box.offsetHeight;
+		box.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+		box.style.top = Math.max(8, Math.min(y, window.innerHeight - hgt - 8)) + 'px';
+		setTimeout(function () {
+			document.addEventListener('mousedown', onDoc, true);
+			document.addEventListener('touchstart', onDoc, true);
+			window.addEventListener('resize', onResize);
+		}, 0);
+		var first = entries()[0];
+		if (first) first.focus();
+		this.picker = { close: close };
+	};
+
+	App.prototype.drawKids = function (note) {
+		var self = this, list = this.kidList;
+		list.innerHTML = '';
+		var kids = kidsOf(this.project, note);
+		if (!kids.length) { list.appendChild(h('li', { class: 'vb-source-empty' }, t('kids_none'))); return; }
+		kids.forEach(function (k) {
+			list.appendChild(h('li', { class: 'vb-source vb-kid-row' },
+				h('span', { class: 'vb-picker-dot', style: 'background:' + k.color, 'aria-hidden': 'true' }),
+				h('span', { class: 'vb-kid-title' }, k.title || t('untitled'), filesIn(k.text).slice(0, 3).map(fileIcon)),
+				h('button', { type: 'button', class: 'vb-btn vb-btn-small', onclick: function () { self.showOnWall(k.id); } }, t('show_on_wall')),
+				h('button', { type: 'button', class: 'vb-icon-btn', title: t('kid_remove'), 'aria-label': t('kid_remove') + ': ' + (k.title || t('untitled')), onclick: function () { self.toggleRef(note, k.id); } }, '×')
+			));
+		});
+	};
+
 	/* ---------- Taalkeuze ---------- */
 
 	App.prototype.languageSelect = function () {
@@ -1178,8 +2098,12 @@
 		this.root.setAttribute('lang', LANG);
 		this.panel.setAttribute('aria-label', t('edit_note_label'));
 		var open = this.selectedId && !this.panel.hidden ? this.selectedId : null;
+		var openWall = this.selectedWallId && !this.panel.hidden ? this.selectedWallId : null;
+		if (this.picker) this.picker.close(false);
 		this.render();
 		if (open) this.openPanel(open);
+		else if (openWall && this.wallItems) this.openWallPanel(openWall);
+		open = open || openWall;
 		var select = this.top.querySelector('.vb-select');
 		if (select && refocus && !open) select.focus();
 	};
@@ -1266,6 +2190,9 @@
 				grid.appendChild(n ? h('div', { class: 'vb-print-note' + (col === 0 ? ' is-spine' : ''), style: 'background:' + n.color },
 					h('div', { class: 'vb-print-note-title' }, n.title || t('untitled')),
 					n.text ? h('div', { class: 'vb-print-note-text' }, n.text) : null,
+					kidsOf(p, n).length ? h('ul', { class: 'vb-print-kids' }, kidsOf(p, n).map(function (k) {
+						return h('li', { style: 'border-left-color:' + k.color }, '\u21b3 ' + (k.title || t('untitled')));
+					})) : null,
 					n.sources.length ? h('ul', { class: 'vb-print-sources' }, n.sources.map(function (s) { return h('li', null, sourceLabel(s)); })) : null
 				) : h('div', { class: 'vb-print-empty' + (col === 0 ? ' is-spine' : '') }));
 			}
@@ -1501,23 +2428,27 @@
 				var inner = w - 2 * pad;
 				var titleLines = wrap(n.title || t('untitled'), fsTitle, true, inner);
 				var textLines = n.text ? wrap(n.text, fsText, false, inner) : [];
+				var kidLinesPdf = [];
+				kidsOf(project, n).forEach(function (k) {
+					wrap('\u00bb ' + (k.title || t('untitled')), fsSrc + 0.5, true, inner).forEach(function (l) { kidLinesPdf.push(l); });
+				});
 				var srcLines = [];
 				n.sources.forEach(function (s) {
 					wrap('• ' + sourceLabel(s), fsSrc, false, inner).forEach(function (l) { srcLines.push(l); });
 				});
-				var hgt = pad + titleLines.length * leadTitle + (textLines.length ? 3 + textLines.length * leadText : 0) + (srcLines.length ? 4 + srcLines.length * leadSrc : 0) + pad;
-				return { title: titleLines, text: textLines, src: srcLines, h: hgt };
+				var hgt = pad + titleLines.length * leadTitle + (textLines.length ? 3 + textLines.length * leadText : 0) + (kidLinesPdf.length ? 4 + kidLinesPdf.length * leadSrc : 0) + (srcLines.length ? 4 + srcLines.length * leadSrc : 0) + pad;
+				return { title: titleLines, text: textLines, kids: kidLinesPdf, src: srcLines, h: hgt };
 			}
 			function fitNote(l, maxH) {
 				// Te lang voor één pagina: regels weglaten en eindigen met een beletselteken.
 				var ell = [0x85];
-				while (l.h > maxH && (l.src.length || l.text.length || l.title.length > 1)) {
-					var list = l.src.length ? l.src : l.text.length ? l.text : l.title;
-					var lead = list === l.src ? leadSrc : list === l.text ? leadText : leadTitle;
+				while (l.h > maxH && (l.src.length || l.kids.length || l.text.length || l.title.length > 1)) {
+					var list = l.src.length ? l.src : l.text.length ? l.text : l.kids.length ? l.kids : l.title;
+					var lead = list === l.src || list === l.kids ? leadSrc : list === l.text ? leadText : leadTitle;
 					list.pop();
 					l.h -= lead;
 					if (list.length) list[list.length - 1] = list[list.length - 1].concat(ell);
-					else if (list === l.src) l.h -= 4;
+					else if (list === l.src || list === l.kids) l.h -= 4;
 					else if (list === l.text) l.h -= 3;
 				}
 				return l;
@@ -1530,6 +2461,10 @@
 				if (l.text.length) {
 					ty += 3;
 					l.text.forEach(function (line) { page.text(line, x + pad, ty, fsText, 'F1', INK); ty += leadText; });
+				}
+				if (l.kids.length) {
+					ty += 4;
+					l.kids.forEach(function (line) { page.text(line, x + pad, ty, fsSrc + 0.5, 'F2', INK); ty += leadSrc; });
 				}
 				if (l.src.length) {
 					ty += 4;

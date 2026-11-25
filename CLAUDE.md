@@ -7,6 +7,12 @@ Een whiteboard met plakbriefjes om verhaalstructuren te bouwen. Kolom 1 is de
 ruggengraat (van boven naar beneden), de kolommen ernaast zijn details per onderdeel.
 Gebruikers zijn Nederlandstalige journalisten zonder technische kennis.
 
+Naast het storyboard is er een tabblad **Crazywall**: losse briefjes op een onbeperkte wand
+(`project.wall.items`) met draden ertussen (`project.wall.lines`). Een plakbriefje op het
+storyboard kan crazywall-briefjes als onderliggende briefjes hebben (`note.refs`, een lijst
+met id's van wandbriefjes). Op de crazywall kun je niets uploaden; een regel met alleen een
+bestandsnaam krijgt een pictogram van het bestandstype.
+
 ## Basisonderdelen: deze mogen NOOIT verdwijnen
 Elk onderdeel heeft een markering `@basis:<naam>` in de code. `tools/check-basis.sh`
 controleert ze; ontbreekt er één, dan komt er geen release.
