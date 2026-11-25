@@ -4,7 +4,7 @@ Tags: schrijven, structuur, whiteboard, plakbriefjes, journalistiek
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 
 Whiteboard met plakbriefjes om verhaalstructuren te bouwen. Alle gegevens blijven in de browser.
@@ -15,6 +15,11 @@ Bouw de ruggengraat van je artikel van boven naar beneden en plak details ernaas
 Elk briefje heeft een titel, kleur, beschrijving en bronnen (links of documenten).
 Meerdere verhalen staan in een bibliotheek. Exporteren, importeren en delen via een link
 kan allemaal zonder dat er iets op de server wordt opgeslagen.
+
+Op het tabblad Crazywall verzamel je losse briefjes op een onbeperkte wand en span je
+er draden tussen. Verwijs naar een bestand door de bestandsnaam op een eigen regel te typen;
+een pictogram toont het bestandstype. Met de rechtermuisknop hang je een crazywall-briefje
+onder een plakbriefje op het storyboard.
 
 Het bord is er in het Nederlands en het Engels; gebruikers kiezen de taal rechtsboven.
 Beheerders kunnen extra talen toevoegen onder Nutgraph-instellingen. Via het menu Meer
@@ -39,3 +44,13 @@ Testupdate
 * Het bord is tweetalig (Nederlands en Engels), met een keuzelijst voor de taal. De keuze wordt in de browser onthouden.
 * Beheerders kunnen extra talen toevoegen en een standaardtaal kiezen.
 * Nieuw menu "Meer" met "Afdrukken" (A4 liggend) en "Exporteren als PDF" (A4 liggend).
+
+= 1.2.0 =
+* Nieuw tabblad "Crazywall": briefjes op een onbeperkte wand, met eigen kleuren en draden ertussen (slepen vanaf de punaise). Schuiven, zoomen en "Alles in beeld".
+* Bestandsnamen op een eigen regel worden herkend en krijgen een pictogram van het bestandstype. Uploaden kan op de crazywall niet.
+* Op het storyboard hang je met de rechtermuisknop (of via het bewerkpaneel) een crazywall-briefje als onderliggend briefje onder een plakbriefje.
+* De crazywall en de onderliggende briefjes gaan mee in export, import, deellink, tekstoverzicht, afdrukken en PDF. Oude borden en exportbestanden blijven gewoon werken.
+
+= 1.3.0 =
+* Briefjes op de crazywall krijgen een soort met eigen pictogram: persoon, organisatie, plek, gebeurtenis, situatie, tijdstip, voorwerp, spoor of bewijsstuk, foto, document, geld, voertuig, telefoon, bericht of sociale media, citaat, bron, nieuwsartikel, rechtszaak, open vraag, idee of iets anders.
+* Het pictogram verschijnt ook bij onderliggende briefjes op het storyboard en in het keuzemenu; daar kun je ook op soort zoeken.
